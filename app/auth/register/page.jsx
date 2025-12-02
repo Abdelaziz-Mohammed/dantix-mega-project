@@ -80,9 +80,23 @@ export default function RegisterPage() {
       const message = response?.message || "User created successfully.";
       setSuccess(message);
     } catch (err) {
-      const message =
-        err?.response?.data?.message ||
+      const apiData = err?.response?.data;
+      let message =
+        apiData?.message ||
+        err?.message ||
         "Registration failed. Please try again.";
+
+      if (apiData?.errors && typeof apiData.errors === "object") {
+        const collected = Object.values(apiData.errors)
+          .flat()
+          .filter(Boolean);
+        if (collected.length) {
+          message = collected.join(" \n");
+        }
+      } else if (typeof apiData === "string" && apiData.trim().length) {
+        message = apiData;
+      }
+
       setError(message);
     } finally {
       setLoading(false);
