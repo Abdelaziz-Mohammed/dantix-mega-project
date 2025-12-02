@@ -8,8 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { Spinner } from "@/components/ui/spinner";
-import { getCookie } from "@/lib/utils";
-import { getModelReport } from "@/lib/datasetService";
+import { getModelReport, getUserDatasets } from "@/lib/datasetService";
 
 function MetricGrid({ title, metrics }) {
   if (!metrics) return null;
@@ -34,8 +33,9 @@ export default function ReportPage() {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [showRaw, setShowRaw] = useState(false);
+  // Removed raw response toggle
   const [tokenPresent, setTokenPresent] = useState(false);
+  const [userDatasetOptions, setUserDatasetOptions] = useState([]);
   const [lastFetched, setLastFetched] = useState(null);
 
   useEffect(() => {
@@ -43,19 +43,29 @@ export default function ReportPage() {
       const token = window.localStorage.getItem("auth_token");
       setTokenPresent(Boolean(token));
     }
-    const cachedDataset = getCookie("dataset_response");
-    if (cachedDataset) {
+    // Fetch user datasets to populate dropdown
+    (async () => {
       try {
-        const parsed = JSON.parse(cachedDataset);
-        const possibleId = parsed?.datasetId || parsed?.dataset_id || parsed?.id || parsed?.dataSetId;
-        if (possibleId) {
-          setDatasetId(String(possibleId));
-          setActiveId(String(possibleId));
+        const list = await getUserDatasets();
+        let options = Array.isArray(list)
+          ? list.map((d) => {
+              if (typeof d === "string" || typeof d === "number") {
+                return { id: String(d), name: String(d) };
+              }
+              return { id: String(d.id ?? d.datasetId ?? d.dataset_id), name: String(d.name ?? d.dataset_name ?? d.title ?? d.id) };
+            }).filter((d) => d.id)
+          : [];
+        options = options.sort((a, b) => Number(b.id) - Number(a.id));
+        setUserDatasetOptions(options);
+        if (options.length) {
+          setDatasetId(options[0].id);
+          setActiveId(options[0].id);
+          await fetchReport(options[0].id);
         }
       } catch (err) {
-        console.warn("Failed to parse dataset cookie", err);
+        console.warn("Failed to fetch user datasets", err);
       }
-    }
+    })();
   }, []);
 
   useEffect(() => {
@@ -113,7 +123,20 @@ export default function ReportPage() {
             <CardDescription>Provide a dataset id to retrieve the evaluated models report. The request automatically adds the bearer token from local storage.</CardDescription>
           </CardHeader>
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            <Input value={datasetId} onChange={(e) => setDatasetId(e.target.value)} placeholder="Dataset ID" />
+            <label className="text-sm" htmlFor="dataset-select">Select dataset</label>
+            <select
+              id="dataset-select"
+              className="rounded border px-3 py-2"
+              value={datasetId}
+              onChange={(e) => setDatasetId(e.target.value)}
+            >
+              {userDatasetOptions.length === 0 && (
+                <option value="" disabled>No datasets found</option>
+              )}
+              {userDatasetOptions.map((opt) => (
+                <option key={opt.id} value={opt.id}>{opt.name}</option>
+              ))}
+            </select>
             <div className="flex items-center gap-2">
               <Button type="submit" disabled={loading || !tokenPresent}>Load report</Button>
               <Button type="button" variant="outline" onClick={() => fetchReport(activeId)} disabled={!activeId || loading}>Refresh</Button>
@@ -133,9 +156,6 @@ export default function ReportPage() {
           <div className="space-y-8">
             <div className="flex justify-between items-center">
               <h2 className="text-xl font-semibold">Report overview</h2>
-              <Button variant="outline" size="sm" onClick={() => setShowRaw((prev) => !prev)}>
-                {showRaw ? "Hide raw" : "Show raw"}
-              </Button>
             </div>
 
             <section className="grid gap-4 md:grid-cols-2">
@@ -213,14 +233,7 @@ export default function ReportPage() {
               </section>
             )}
 
-            {showRaw && (
-              <section className="space-y-2">
-                <h3 className="text-sm font-semibold">Raw response</h3>
-                <pre className="bg-gray-900 text-gray-100 text-xs p-4 rounded-lg overflow-auto">
-{JSON.stringify(report, null, 2)}
-                </pre>
-              </section>
-            )}
+            {/* Raw response section removed */}
           </div>
         )}
       </main>

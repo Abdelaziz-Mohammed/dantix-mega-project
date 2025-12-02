@@ -17,8 +17,8 @@ import { useAuth } from "@/components/shared/AuthContext";
 
 const menuItems = [
   { href: "/upload", label: "Upload Dataset", icon: Upload },
-  { href: "/predict", label: "Predict", icon: ChartPie },
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/predict", label: "Predict", icon: ChartPie },
   { href: "/report", label: "Report", icon: ChartPie },
 ];
 

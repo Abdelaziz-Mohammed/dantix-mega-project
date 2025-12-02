@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useAuth } from "@/components/shared/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,7 @@ import { Alert } from "@/components/ui/alert";
 import { Form, FormField } from "@/components/ui/form";
 
 export default function RegisterPage() {
+  const router = useRouter();
   const { register } = useAuth();
   const [form, setForm] = useState({
     userName: "",
@@ -29,39 +31,78 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [fieldErrors, setFieldErrors] = useState({});
 
   function handleChange(event) {
     const { name, value } = event.target;
     setForm((prev) => ({ ...prev, [name]: value }));
+    // Clear field error on change
+    if (fieldErrors[name]) {
+      setFieldErrors((prev) => ({ ...prev, [name]: "" }));
+    }
   }
 
   function validate() {
-    if (
-      !form.userName ||
-      !form.fullName ||
-      !form.email ||
-      !form.password ||
-      !form.confirmPassword
-    ) {
-      return "Please fill in all required fields.";
+    const errors = {};
+
+    // Username validation
+    if (!form.userName.trim()) {
+      errors.userName = "Username is required.";
+    } else if (form.userName.trim().length < 3) {
+      errors.userName = "Username must be at least 3 characters.";
     }
-    if (form.password !== form.confirmPassword) {
-      return "Passwords do not match.";
+
+    // Full name validation
+    if (!form.fullName.trim()) {
+      errors.fullName = "Full name is required.";
+    } else if (form.fullName.trim().length < 2) {
+      errors.fullName = "Full name must be at least 2 characters.";
     }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
-      return "Please enter a valid email address.";
+
+    // Phone number validation (optional but if provided, must be valid)
+    if (form.phoneNumber1.trim()) {
+      if (!/^[0-9+\-\s()]{7,}$/.test(form.phoneNumber1)) {
+        errors.phoneNumber1 = "Phone number must be at least 7 digits and contain only numbers, +, -, (), or spaces.";
+      }
     }
-    return "";
+
+    // Email validation
+    if (!form.email.trim()) {
+      errors.email = "Email is required.";
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
+      errors.email = "Please enter a valid email address.";
+    }
+
+    // Password validation
+    if (!form.password) {
+      errors.password = "Password is required.";
+    } else if (form.password.length < 6) {
+      errors.password = "Password must be at least 6 characters.";
+    } else if (!/[A-Z]/.test(form.password)) {
+      errors.password = "Password must contain at least one uppercase letter.";
+    } else if (!/[0-9]/.test(form.password)) {
+      errors.password = "Password must contain at least one number.";
+    }
+
+    // Confirm password validation
+    if (!form.confirmPassword) {
+      errors.confirmPassword = "Please confirm your password.";
+    } else if (form.password !== form.confirmPassword) {
+      errors.confirmPassword = "Passwords do not match.";
+    }
+
+    return errors;
   }
 
   async function handleSubmit(event) {
     event.preventDefault();
     setError("");
     setSuccess("");
+    setFieldErrors({});
 
-    const validationError = validate();
-    if (validationError) {
-      setError(validationError);
+    const validationErrors = validate();
+    if (Object.keys(validationErrors).length > 0) {
+      setFieldErrors(validationErrors);
       return;
     }
 
@@ -79,6 +120,11 @@ export default function RegisterPage() {
       const response = await register(payload);
       const message = response?.message || "User created successfully.";
       setSuccess(message);
+      
+      // Redirect to dashboard after 1 second
+      setTimeout(() => {
+        router.push("/dashboard");
+      }, 1000);
     } catch (err) {
       const apiData = err?.response?.data;
       let message =
@@ -134,7 +180,11 @@ export default function RegisterPage() {
               value={form.userName}
               onChange={handleChange}
               placeholder="Choose a username"
+              className={fieldErrors.userName ? "border-red-500" : ""}
             />
+            {fieldErrors.userName && (
+              <p className="text-red-500 text-sm mt-1">{fieldErrors.userName}</p>
+            )}
           </FormField>
 
           <FormField>
@@ -145,18 +195,26 @@ export default function RegisterPage() {
               value={form.fullName}
               onChange={handleChange}
               placeholder="Enter your full name"
+              className={fieldErrors.fullName ? "border-red-500" : ""}
             />
+            {fieldErrors.fullName && (
+              <p className="text-red-500 text-sm mt-1">{fieldErrors.fullName}</p>
+            )}
           </FormField>
 
           <FormField>
-            <Label htmlFor="phoneNumber1">Phone number</Label>
+            <Label htmlFor="phoneNumber1">Phone number (optional)</Label>
             <Input
               id="phoneNumber1"
               name="phoneNumber1"
               value={form.phoneNumber1}
               onChange={handleChange}
               placeholder="Enter your phone number"
+              className={fieldErrors.phoneNumber1 ? "border-red-500" : ""}
             />
+            {fieldErrors.phoneNumber1 && (
+              <p className="text-red-500 text-sm mt-1">{fieldErrors.phoneNumber1}</p>
+            )}
           </FormField>
 
           <FormField>
@@ -169,7 +227,11 @@ export default function RegisterPage() {
               onChange={handleChange}
               placeholder="you@example.com"
               autoComplete="email"
+              className={fieldErrors.email ? "border-red-500" : ""}
             />
+            {fieldErrors.email && (
+              <p className="text-red-500 text-sm mt-1">{fieldErrors.email}</p>
+            )}
           </FormField>
 
           <FormField>
@@ -182,7 +244,12 @@ export default function RegisterPage() {
               onChange={handleChange}
               placeholder="Create a strong password"
               autoComplete="new-password"
+              className={fieldErrors.password ? "border-red-500" : ""}
             />
+            {fieldErrors.password && (
+              <p className="text-red-500 text-sm mt-1">{fieldErrors.password}</p>
+            )}
+            <p className="text-xs text-gray-600 mt-1">Must contain: uppercase letter, number, 6+ characters</p>
           </FormField>
 
           <FormField>
@@ -195,7 +262,11 @@ export default function RegisterPage() {
               onChange={handleChange}
               placeholder="Re-enter your password"
               autoComplete="new-password"
+              className={fieldErrors.confirmPassword ? "border-red-500" : ""}
             />
+            {fieldErrors.confirmPassword && (
+              <p className="text-red-500 text-sm mt-1">{fieldErrors.confirmPassword}</p>
+            )}
           </FormField>
 
           <Button

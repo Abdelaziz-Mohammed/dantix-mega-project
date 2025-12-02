@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useAuth } from "@/components/shared/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,7 @@ import { Alert } from "@/components/ui/alert";
 import { Form, FormField } from "@/components/ui/form";
 
 export default function LoginPage() {
+  const router = useRouter();
   const { login } = useAuth();
   const [form, setForm] = useState({ userName: "", password: "" });
   const [loading, setLoading] = useState(false);
@@ -42,6 +44,8 @@ export default function LoginPage() {
         userName: form.userName,
         password: form.password,
       });
+      // Redirect to dashboard after successful login
+      router.push("/dashboard");
     } catch (err) {
       const message =
         err?.response?.data?.message ||

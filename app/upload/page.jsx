@@ -37,16 +37,46 @@ export default function UploadPage() {
     }
   });
 
+  const validateFile = (file) => {
+    if (!file) {
+      return "Please choose a dataset file to upload.";
+    }
+
+    // Check file size (10 MB = 10 * 1024 * 1024 bytes)
+    const maxSizeBytes = 10 * 1024 * 1024;
+    if (file.size > maxSizeBytes) {
+      return `File size must be 10 MB or less. Current size: ${(file.size / 1024 / 1024).toFixed(2)} MB`;
+    }
+
+    // Check filename for whitespaces
+    if (/\s/.test(file.name)) {
+      return "Filename cannot contain whitespaces. Please rename your file.";
+    }
+
+    // Check file extension and MIME type
+    const allowedExtensions = [".csv", ".json", ".xls", ".xlsx"];
+    const fileExtension = file.name.toLowerCase().substring(file.name.lastIndexOf("."));
+    const isValidExtension = allowedExtensions.some((ext) => fileExtension.endsWith(ext));
+
+    if (!isValidExtension) {
+      return `File type not supported. Accepted formats: CSV, JSON, Excel (.xls, .xlsx)`;
+    }
+
+    return null;
+  };
+
   const onSubmit = async (e) => {
     e.preventDefault();
     setError("");
     setSuccess("");
     setResponse(null);
 
-    if (!file) {
-      setError("Please choose a dataset file to upload.");
+    const fileValidationError = validateFile(file);
+    if (fileValidationError) {
+      setError(fileValidationError);
       return;
     }
+
     if (!targetColumn.trim()) {
       setError("Please provide the target column name.");
       return;
@@ -91,6 +121,46 @@ export default function UploadPage() {
               <CardDescription>
                 Choose a file and set options. If cached, you can clear to upload another. Your bearer token is attached automatically.
               </CardDescription>
+              <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-4">
+                <p className="font-semibold text-gray-800 flex items-center gap-2">
+                  <span className="text-xl">📋</span>
+                  Upload Guidelines
+                </p>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="rounded-md bg-white p-3 border border-gray-200">
+                    <p className="font-medium text-gray-800 flex items-center gap-2">
+                      <span>📦</span>
+                      File Size
+                    </p>
+                    <p className="text-sm text-gray-700 mt-1">Maximum 10 MB per file</p>
+                  </div>
+                  <div className="rounded-md bg-white p-3 border border-gray-200">
+                    <p className="font-medium text-gray-800 flex items-center gap-2">
+                      <span>📄</span>
+                      Supported Formats
+                    </p>
+                    <p className="text-sm text-gray-700 mt-1">CSV, JSON, Excel (.xls, .xlsx)</p>
+                  </div>
+                  <div className="rounded-md bg-white p-3 border border-gray-200 md:col-span-2">
+                    <p className="font-medium text-gray-800 flex items-center gap-2">
+                      <span>✓</span>
+                      Requirements
+                    </p>
+                    <ul className="text-sm text-gray-700 list-disc pl-5 mt-2 space-y-1">
+                      <li>Include a target column for predictions</li>
+                      <li>Consistent data types within columns</li>
+                      <li>UTF-8 encoding recommended</li>
+                    </ul>
+                  </div>
+                  <div className="rounded-md bg-white p-3 border border-gray-200 md:col-span-2">
+                    <p className="font-medium text-gray-800 flex items-center gap-2">
+                      <span>⚙️</span>
+                      Processing
+                    </p>
+                    <p className="text-sm text-gray-700 mt-1">Dataset validation, schema extraction, and optional AutoML may take several minutes</p>
+                  </div>
+                </div>
+              </div>
             </CardHeader>
 
             <form onSubmit={onSubmit} className="space-y-5" aria-disabled={cached}>
@@ -156,21 +226,7 @@ export default function UploadPage() {
           </Card>
         </div>
 
-        {response ? (
-          <div className="mt-6 flex w-full justify-center">
-            <Card className="w-full max-w-2xl">
-              <CardHeader>
-                <CardTitle>Server Response</CardTitle>
-                <CardDescription>
-                  Raw JSON returned by the upload endpoint.
-                </CardDescription>
-              </CardHeader>
-              <div className="overflow-auto rounded-md border bg-gray-50 p-4 text-sm text-gray-800">
-                <pre className="whitespace-pre-wrap break-words">{JSON.stringify(response, null, 2)}</pre>
-              </div>
-            </Card>
-          </div>
-        ) : null}
+        {/* Server response display removed as requested */}
       </main>
     </ProtectedRoute>
   );

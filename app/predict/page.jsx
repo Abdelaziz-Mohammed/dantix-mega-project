@@ -8,14 +8,13 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { Spinner } from "@/components/ui/spinner";
-import { getCookie } from "@/lib/utils";
-import { getDatasetSchema, getModelReport, predictDataset } from "@/lib/datasetService";
+import { getDatasetSchema, getModelReport, predictDataset, getUserDatasets } from "@/lib/datasetService";
 
 function normalizeFeature(field, targetName) {
   const name = field?.name || field?.columnName || field?.ColumnName;
   if (!name || name === targetName) return null;
   if (field?.is_target || field?.isTarget) return null;
-  const rawType = (field?.dataType || field?.type || field?.Type || "").toLowerCase();
+  const rawType = (field?.dataType || field?.type || field?.Type || field?.pandas_dtype || "").toLowerCase();
   const inputType = (field?.input_type || field?.inputType || "").toLowerCase();
   const options = field?.raw_labels || field?.rawLabels || field?.categories || field?.uniqueValues || field?.unique_values || field?.values;
   const normalizedOptions = Array.isArray(options)
@@ -28,12 +27,17 @@ function normalizeFeature(field, targetName) {
   const isDate = inputType.includes("date") || rawType.includes("date");
   const isBoolean = inputType.includes("bool") || rawType.includes("bool");
   const isNumeric = isDate || isBoolean ? false : (field?.isNumeric ?? field?.is_numeric ?? inputSuggestsNumeric ?? typeSuggestsNumeric);
+  const isNumericContinuous = inputType.includes("numeric_continuous");
+  const isNumericCategorical = inputType.includes("numeric_categorical");
   let categories = !isNumeric && Array.isArray(normalizedOptions) && normalizedOptions.length > 0
     ? normalizedOptions.map((v) => (v == null ? "" : String(v)))
     : [];
   if (isBoolean) {
     categories = ["true", "false"];
   }
+  const minAllowed = field?.min_allowed ?? field?.minAllowed ?? null;
+  const maxAllowed = field?.max_allowed ?? field?.maxAllowed ?? null;
+  const isInteger = rawType.includes("int") && !rawType.includes("float");
   return {
     name,
     label: field?.label || name.replace(/_/g, " "),
@@ -42,6 +46,12 @@ function normalizeFeature(field, targetName) {
     isBoolean,
     isDate,
     categories,
+    inputType,
+    isNumericContinuous,
+    isNumericCategorical,
+    minAllowed,
+    maxAllowed,
+    isInteger,
   };
 }
 
@@ -49,6 +59,8 @@ export default function PredictPage() {
   const [datasetId, setDatasetId] = useState("");
   const [activeId, setActiveId] = useState("");
   const [tokenPresent, setTokenPresent] = useState(false);
+  const [userDatasetOptions, setUserDatasetOptions] = useState([]);
+  const [datasetsError, setDatasetsError] = useState("");
   const [schemaInfo, setSchemaInfo] = useState(null);
   const [featureDefs, setFeatureDefs] = useState([]);
   const [featureValues, setFeatureValues] = useState({});
@@ -65,20 +77,41 @@ export default function PredictPage() {
       const token = window.localStorage.getItem("auth_token");
       setTokenPresent(Boolean(token));
     }
-    const cachedDataset = getCookie("dataset_response");
-    if (cachedDataset) {
+    // Fetch user datasets to populate dropdown
+    (async () => {
       try {
-        const parsed = JSON.parse(cachedDataset);
-        const possibleId = parsed?.datasetId || parsed?.dataset_id || parsed?.id || parsed?.dataSetId;
-        if (possibleId) {
-          setDatasetId(String(possibleId));
-          setActiveId(String(possibleId));
+        setDatasetsError("");
+        const list = await getUserDatasets();
+        // Expect list of objects with id/name; support plain arrays too
+        let options = Array.isArray(list)
+          ? list.map((d) => {
+              if (typeof d === "string" || typeof d === "number") {
+                return { id: String(d), name: String(d) };
+              }
+              return { id: String(d.datasetId ?? d.id ?? d.dataset_id), name: String(d.name ?? d.dataset_name ?? d.title ?? d.id) };
+            }).filter((d) => d.id)
+          : [];
+        options = options.sort((a, b) => Number(b.id) - Number(a.id));
+        setUserDatasetOptions(options);
+        if (options.length) {
+          setDatasetId(options[0].id);
+          setActiveId(options[0].id);
+          await loadMetadata(options[0].id);
         }
       } catch (err) {
-        console.warn("Failed to parse dataset cookie", err);
+        console.warn("Failed to fetch user datasets", err);
+        setDatasetsError(err?.response?.data?.message || err.message || "Failed to load your datasets");
       }
-    }
+    })();
   }, []);
+
+  // Auto-load metadata when dataset selection changes
+  useEffect(() => {
+    if (!datasetId) return;
+    if (datasetId !== activeId) {
+      setActiveId(datasetId);
+    }
+  }, [datasetId]);
 
   useEffect(() => {
     if (!activeId) return;
@@ -104,7 +137,7 @@ export default function PredictPage() {
       setFeatureValues((prev) => {
         const next = {};
         normalized.forEach((f) => {
-          next[f.name] = prev[f.name] ?? "";
+          next[f.name] = prev[f.name] ?? (f.isNumericContinuous ? (f.minAllowed ?? 0) : "");
         });
         return next;
       });
@@ -209,7 +242,23 @@ export default function PredictPage() {
             </CardDescription>
           </CardHeader>
           <form onSubmit={handleDatasetSubmit} className="flex flex-col gap-4">
-            <Input value={datasetId} onChange={(e) => setDatasetId(e.target.value)} placeholder="Dataset ID" />
+            <label className="text-sm" htmlFor="dataset-select">Select dataset</label>
+            <select
+              id="dataset-select"
+              className="rounded border px-3 py-2"
+              value={datasetId}
+              onChange={(e) => setDatasetId(e.target.value)}
+            >
+              {userDatasetOptions.length === 0 && (
+                <option value="" disabled>No datasets found</option>
+              )}
+              {userDatasetOptions.map((opt) => (
+                <option key={opt.id} value={opt.id}>{opt.name}</option>
+              ))}
+            </select>
+            {datasetsError && (
+              <Alert variant="destructive">{datasetsError}</Alert>
+            )}
             <div className="flex flex-wrap gap-2 items-center">
               <Button type="submit" disabled={metaLoading || !tokenPresent}>Load metadata</Button>
               <Button type="button" variant="outline" onClick={() => activeId && loadMetadata(activeId)} disabled={!activeId || metaLoading}>Refresh</Button>
@@ -249,60 +298,115 @@ export default function PredictPage() {
               </div>
             </section>
 
-            <section className="space-y-4">
+            <section className="space-y-6">
               <h3 className="text-lg font-semibold">Feature values</h3>
               {featureDefs.length === 0 && (
                 <Alert variant="default">No feature definitions were returned from the schema endpoint.</Alert>
               )}
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {featureDefs.map((feature) => (
-                  <div key={feature.name} className="flex flex-col gap-2">
-                    <label className="text-sm font-medium text-gray-700" htmlFor={`feature-${feature.name}`}>
-                      {feature.label}
-                      <span className="ml-2 text-xs text-gray-500">
-                        {feature.isDate
-                          ? "date"
-                          : feature.isBoolean
-                            ? "boolean"
-                            : feature.isNumeric
-                              ? "numeric"
-                              : "categorical"}
-                      </span>
-                    </label>
-                    {feature.isDate ? (
-                      <Input
-                        id={`feature-${feature.name}`}
-                        type="date"
-                        value={featureValues[feature.name] ?? ""}
-                        onChange={(e) => handleFeatureChange(feature.name, e.target.value)}
-                        className="w-full"
-                      />
-                    ) : feature.isNumeric ? (
-                      <Input
-                        id={`feature-${feature.name}`}
-                        type="number"
-                        step="any"
-                        value={featureValues[feature.name] ?? ""}
-                        onChange={(e) => handleFeatureChange(feature.name, e.target.value)}
-                        placeholder="Enter value"
-                        className="w-full"
-                      />
-                    ) : (
-                      <select
-                        id={`feature-${feature.name}`}
-                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                        value={featureValues[feature.name] ?? ""}
-                        onChange={(e) => handleFeatureChange(feature.name, e.target.value)}
-                      >
-                        <option value="" disabled>Select value</option>
-                        {feature.categories.map((option) => (
-                          <option key={`${feature.name}-${option}`} value={option}>{option}</option>
-                        ))}
-                      </select>
-                    )}
+
+              {/* Sliders (numeric_continuous) */}
+              {featureDefs.some((f) => f.isNumericContinuous) && (
+                <div className="space-y-3">
+                  <p className="text-sm font-medium text-gray-700">Continuous features</p>
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    {featureDefs.filter((f) => f.isNumericContinuous).map((feature) => (
+                      <div key={feature.name} className="flex flex-col gap-2">
+                        <label className="text-sm font-medium text-gray-700" htmlFor={`feature-${feature.name}`}>
+                          {feature.label}
+                          <span className="ml-2 text-xs text-gray-600">
+                            {feature.minAllowed ?? "min"} – {feature.maxAllowed ?? "max"}
+                          </span>
+                        </label>
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between text-xs text-gray-600">
+                            <span>{feature.minAllowed ?? "min"}</span>
+                            <span className="font-medium text-blue-600">
+                              {featureValues[feature.name] ?? feature.minAllowed ?? 0}
+                            </span>
+                            <span>{feature.maxAllowed ?? "max"}</span>
+                          </div>
+                          <input
+                            id={`feature-${feature.name}`}
+                            type="range"
+                            min={feature.minAllowed ?? 0}
+                            max={feature.maxAllowed ?? 100}
+                            step={feature.isInteger ? 1 : 0.1}
+                            value={
+                              featureValues[feature.name] !== "" && featureValues[feature.name] !== undefined && featureValues[feature.name] !== null
+                                ? Number(featureValues[feature.name])
+                                : feature.minAllowed ?? 0
+                            }
+                            onChange={(e) => handleFeatureChange(feature.name, e.target.value)}
+                            className="w-full appearance-none h-2 rounded-lg bg-gradient-to-r from-blue-100 via-blue-200 to-blue-300"
+                            style={{ accentColor: "#1f2937" }}
+                          />
+                          <div className="flex items-center justify-end">
+                            <span className="text-xs text-gray-500">Range: {feature.minAllowed ?? "–"} to {feature.maxAllowed ?? "–"}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </div>
+              )}
+
+              {/* Dropdowns (categorical & boolean) */}
+              {featureDefs.some((f) => (!f.isNumericContinuous && (f.isNumericCategorical || (!f.isNumeric && !f.isDate) || f.isBoolean))) && (
+                <div className="space-y-3">
+                  <p className="text-sm font-medium text-gray-700">Categorical features</p>
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    {featureDefs.filter((f) => (!f.isNumericContinuous && (f.isNumericCategorical || (!f.isNumeric && !f.isDate) || f.isBoolean))).map((feature) => (
+                      <div key={feature.name} className="flex flex-col gap-2">
+                        <label className="text-sm font-medium text-gray-700" htmlFor={`feature-${feature.name}`}>{feature.label}</label>
+                        <select
+                          id={`feature-${feature.name}`}
+                          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                          value={featureValues[feature.name] ?? ""}
+                          onChange={(e) => handleFeatureChange(feature.name, e.target.value)}
+                        >
+                          <option value="" disabled>Select value</option>
+                          {feature.categories.map((option) => (
+                            <option key={`${feature.name}-${option}`} value={option}>{option}</option>
+                          ))}
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Others (dates, numeric non-continuous) */}
+              {featureDefs.some((f) => f.isDate || (f.isNumeric && !f.isNumericContinuous)) && (
+                <div className="space-y-3">
+                  <p className="text-sm font-medium text-gray-700">Other features</p>
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    {featureDefs.filter((f) => f.isDate || (f.isNumeric && !f.isNumericContinuous)).map((feature) => (
+                      <div key={feature.name} className="flex flex-col gap-2">
+                        <label className="text-sm font-medium text-gray-700" htmlFor={`feature-${feature.name}`}>{feature.label}</label>
+                        {feature.isDate ? (
+                          <Input
+                            id={`feature-${feature.name}`}
+                            type="date"
+                            value={featureValues[feature.name] ?? ""}
+                            onChange={(e) => handleFeatureChange(feature.name, e.target.value)}
+                            className="w-full"
+                          />
+                        ) : (
+                          <Input
+                            id={`feature-${feature.name}`}
+                            type="number"
+                            step="any"
+                            value={featureValues[feature.name] ?? ""}
+                            onChange={(e) => handleFeatureChange(feature.name, e.target.value)}
+                            placeholder="Enter value"
+                            className="w-full"
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </section>
 
             {predictError && <Alert variant="destructive">{predictError}</Alert>}

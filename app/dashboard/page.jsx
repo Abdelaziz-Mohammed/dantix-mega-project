@@ -4,8 +4,7 @@ import * as React from "react";
 import ProtectedRoute from "@/components/shared/ProtectedRoute";
 import Header from "@/components/shared/Header";
 import { useState, useEffect } from "react";
-import { getDashboardData } from "@/lib/datasetService";
-import { getCookie } from "@/lib/utils";
+import { getDashboardData, getUserDatasets } from "@/lib/datasetService";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
@@ -34,6 +33,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [autoTried, setAutoTried] = useState(false);
+  const [userDatasetOptions, setUserDatasetOptions] = useState([]);
   const [tokenPresent, setTokenPresent] = useState(false);
   const [lastFetched, setLastFetched] = useState(null);
   const [showRaw, setShowRaw] = useState(false);
@@ -270,33 +270,37 @@ export default function DashboardPage() {
     );
   }
 
-  // Attempt to infer datasetId from cached dataset cookie
+  // Initial load: detect token and fetch user datasets
   useEffect(() => {
-    // Detect auth token
     if (typeof window !== "undefined") {
       const t = window.localStorage.getItem("auth_token");
       setTokenPresent(!!t);
     }
-    if (autoTried) return;
-    const raw = getCookie("dataset_response");
-    if (raw) {
+    (async () => {
       try {
-        const parsed = JSON.parse(raw);
-        const candidateKeys = ["datasetId", "id", "dataSetId", "datasetID", "Id"];
-        for (const k of candidateKeys) {
-          if (parsed && parsed[k]) {
-            const found = String(parsed[k]);
-            setDatasetId(found);
-            setActiveId(found); // trigger immediate fetch
-            break;
-          }
+        const list = await getUserDatasets();
+        let options = Array.isArray(list)
+          ? list.map((d) => {
+              if (typeof d === "string" || typeof d === "number") {
+                return { id: String(d), name: String(d) };
+              }
+              return { id: String(d.id ?? d.datasetId ?? d.dataset_id), name: String(d.name ?? d.dataset_name ?? d.title ?? d.id) };
+            }).filter((d) => d.id)
+          : [];
+        // Reverse order by id (assuming higher id is newer)
+        options = options.sort((a, b) => Number(b.id) - Number(a.id));
+        setUserDatasetOptions(options);
+        if (options.length) {
+          setDatasetId(options[0].id);
+          setActiveId(options[0].id);
+          // auto-load after reversing
+          await fetchDashboard(options[0].id);
         }
-      } catch {
-        // ignore parse errors
+      } catch (err) {
+        console.warn("Failed to fetch user datasets", err);
       }
-    }
-    setAutoTried(true);
-  }, [autoTried]);
+    })();
+  }, []);
 
   // Initial auto-load only
   useEffect(() => {
@@ -357,12 +361,21 @@ export default function DashboardPage() {
             </CardDescription>
           </CardHeader>
           <form onSubmit={handleManualFetch} className="flex flex-col gap-4">
-            <div>
-              <Input
-                placeholder="Dataset ID"
+            <div className="flex flex-col gap-2">
+              <label className="text-sm" htmlFor="dataset-select">Select dataset</label>
+              <select
+                id="dataset-select"
+                className="rounded border px-3 py-2"
                 value={datasetId}
                 onChange={(e) => setDatasetId(e.target.value)}
-              />
+              >
+                {userDatasetOptions.length === 0 && (
+                  <option value="" disabled>No datasets found</option>
+                )}
+                {userDatasetOptions.map((opt) => (
+                  <option key={opt.id} value={opt.id}>{opt.name}</option>
+                ))}
+              </select>
             </div>
             <div className="flex gap-2">
               <Button type="submit" disabled={loading || !tokenPresent}>Load Dashboard</Button>
