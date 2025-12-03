@@ -36,7 +36,7 @@ export default function DashboardPage() {
   const [userDatasetOptions, setUserDatasetOptions] = useState([]);
   const [tokenPresent, setTokenPresent] = useState(false);
   const [lastFetched, setLastFetched] = useState(null);
-  const [showRaw, setShowRaw] = useState(false);
+  
   // Chart color palette + heatmap scale
   const PIE_COLORS = ["#2563eb", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6"];
 
@@ -379,7 +379,6 @@ export default function DashboardPage() {
             </div>
             <div className="flex gap-2">
               <Button type="submit" disabled={loading || !tokenPresent}>Load Dashboard</Button>
-              {loading && <Spinner size={24} label="" />}
             </div>
             {!tokenPresent && (
               <Alert variant="destructive">Missing auth token. Please log in first to authorize the request.</Alert>
@@ -397,10 +396,7 @@ export default function DashboardPage() {
 
         {data && !loading && (
           <div className="space-y-8 w-full">
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => fetchDashboard(activeId)} disabled={!activeId || loading}>Refresh</Button>
-              <Button variant="outline" onClick={() => setShowRaw(r => !r)} disabled={!data}>{showRaw ? "Hide Raw" : "Show Raw"}</Button>
-            </div>
+            
             {/* Dynamic charts section */}
             {Array.isArray(data.charts) && data.charts.length > 0 && (
               <section className="space-y-4 w-full">
@@ -554,15 +550,7 @@ export default function DashboardPage() {
                 </div>
               </section>
             ) : null}
-            {/* Raw JSON */}
-            {showRaw && (
-              <section className="space-y-4">
-                <h2 className="text-xl font-semibold">Raw Dashboard Response</h2>
-                <div className="overflow-auto border rounded-lg bg-gray-50 p-4 text-xs leading-relaxed">
-                  <pre className="whitespace-pre-wrap break-words">{JSON.stringify(data, null, 2)}</pre>
-                </div>
-              </section>
-            )}
+            
           </div>
         )}
       </main>
