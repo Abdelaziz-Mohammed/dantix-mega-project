@@ -313,9 +313,6 @@ export default function PredictPage() {
                       <div key={feature.name} className="flex flex-col gap-2">
                         <label className="text-sm font-medium text-gray-700" htmlFor={`feature-${feature.name}`}>
                           {feature.label}
-                          <span className="ml-2 text-xs text-gray-600">
-                            {feature.minAllowed ?? "min"} – {feature.maxAllowed ?? "max"}
-                          </span>
                         </label>
                         <div className="space-y-3">
                           <div className="flex items-center justify-between text-xs text-gray-600">

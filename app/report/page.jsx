@@ -196,30 +196,52 @@ export default function ReportPage() {
               <section className="space-y-4">
                 <h3 className="text-lg font-semibold">All evaluated models</h3>
                 <div className="overflow-auto rounded-xl border bg-white shadow-sm">
-                  <table className="min-w-full text-sm">
-                    <thead className="bg-gray-50 text-gray-600">
-                      <tr>
-                        <th className="px-4 py-3 text-left">Model</th>
-                        <th className="px-4 py-3 text-left">Train RMSE</th>
-                        <th className="px-4 py-3 text-left">Test RMSE</th>
-                        <th className="px-4 py-3 text-left">Train R²</th>
-                        <th className="px-4 py-3 text-left">Test R²</th>
-                        <th className="px-4 py-3 text-left">Gap</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {models.map((model) => (
-                        <tr key={model.name} className="border-t">
-                          <td className="px-4 py-3 font-semibold text-gray-900">{model.name}</td>
-                          <td className="px-4 py-3">{model.train_metrics?.rmse?.toLocaleString?.()}</td>
-                          <td className="px-4 py-3">{model.test_metrics?.rmse?.toLocaleString?.()}</td>
-                          <td className="px-4 py-3">{model.train_metrics?.r2?.toFixed?.(4)}</td>
-                          <td className="px-4 py-3">{model.test_metrics?.r2?.toFixed?.(4)}</td>
-                          <td className="px-4 py-3 text-gray-700">{model.generalization_gap?.toLocaleString?.()}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  {(() => {
+                    // Determine metric keys dynamically from the first model's test metrics
+                    const sample = models[0]?.test_metrics || {};
+                    let metricOrder = Object.keys(sample);
+                    // Prefer common orders depending on task when available
+                    if (report?.task === "classification") {
+                      const preferred = ["accuracy", "precision", "recall", "f1", "auc"];
+                      metricOrder = preferred.filter((k) => k in sample).concat(metricOrder.filter((k) => !preferred.includes(k)));
+                    } else if (report?.task === "regression") {
+                      const preferred = ["rmse", "mae", "mse", "r2"];
+                      metricOrder = preferred.filter((k) => k in sample).concat(metricOrder.filter((k) => !preferred.includes(k)));
+                    }
+                    const formatVal = (v) => {
+                      if (typeof v === "number") {
+                        // Show up to 4 decimals, but keep integers or long numbers readable
+                        const fixed = Number.isFinite(v) ? Number(v.toFixed(4)) : v;
+                        return fixed.toLocaleString();
+                      }
+                      return String(v);
+                    };
+
+                    return (
+                      <table className="min-w-full text-sm">
+                        <thead className="bg-gray-50 text-gray-600">
+                          <tr>
+                            <th className="px-4 py-3 text-left">Model</th>
+                            {metricOrder.map((k) => (
+                              <th key={k} className="px-4 py-3 text-left">Test {k.toUpperCase()}</th>
+                            ))}
+                            <th className="px-4 py-3 text-left">Gap</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {models.map((model) => (
+                            <tr key={model.name} className="border-t">
+                              <td className="px-4 py-3 font-semibold text-gray-900">{model.name}</td>
+                              {metricOrder.map((k) => (
+                                <td key={k} className="px-4 py-3">{formatVal(model.test_metrics?.[k])}</td>
+                              ))}
+                              <td className="px-4 py-3 text-gray-700">{model.generalization_gap?.toLocaleString?.()}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    );
+                  })()}
                 </div>
               </section>
             )}
